@@ -1,0 +1,11 @@
+{
+  "port": 8080,
+  "admin_port": 8081,
+  "strategy": "least-connections",
+  "health_check_frequency": 10,
+  "backends": [
+    "http://localhost:8082",
+    "http://localhost:8083"
+  ]
+}
+
