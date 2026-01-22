@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"sync"
 	"sync/atomic"
+	"math"
 )
 
 type Backend struct {
@@ -53,7 +54,7 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 
 	if s.Strategy == "least-connections" {
 		var best *Backend
-		minConns := int64(1<<63 - 1) 
+		minConns := int64(math.MaxInt64)
 		for _, b := range s.Backends {
 			conns := atomic.LoadInt64(&b.CurrentConns)
 			if b.IsAlive() && conns < minConns {
