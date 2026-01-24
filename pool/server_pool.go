@@ -48,6 +48,7 @@ func (s *ServerPool) AddBackend(b *Backend) {
 }
 
 // GetNextValidPeer dynamically selects based on strategy
+// GetNextValidPeer dynamically selects based on strategy
 func (s *ServerPool) GetNextValidPeer() *Backend {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
@@ -69,12 +70,16 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 	length := len(s.Backends)
 	if length == 0 {
 		return nil
-    }
+	}
+
+	// Increment ONCE and get the starting index
+	start := atomic.AddUint64(&s.Current, 1) % uint64(length)
+
+	// Try backends starting from 'start' position
 	for i := 0; i < length; i++ {
-		idx := atomic.AddUint64(&s.Current, 1) % uint64(length)
-		b := s.Backends[idx]
-		if b.IsAlive() {
-			return b
+		idx := (start + uint64(i)) % uint64(length)
+		if s.Backends[idx].IsAlive() {
+			return s.Backends[idx]
 		}
 	}
 	return nil
