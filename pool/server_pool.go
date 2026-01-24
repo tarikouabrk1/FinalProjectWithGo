@@ -48,7 +48,6 @@ func (s *ServerPool) AddBackend(b *Backend) {
 }
 
 // GetNextValidPeer dynamically selects based on strategy
-// GetNextValidPeer dynamically selects based on strategy
 func (s *ServerPool) GetNextValidPeer() *Backend {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
