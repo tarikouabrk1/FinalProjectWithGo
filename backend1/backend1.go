@@ -8,7 +8,7 @@ import (
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		time.Sleep(2 * time.Second) 
+		time.Sleep(3 * time.Second) 
 		fmt.Fprintln(w, "Hello from backend 8082")
 	})
 
