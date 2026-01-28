@@ -23,7 +23,7 @@ type StatusResponse struct {
 }
 
 func Start(serverPool *pool.ServerPool, port int) {
-	//Créer un ServeMux dédié pour isoler l'admin
+	// Create a dedicated ServeMux to isolate the admin
 	adminMux := http.NewServeMux()
 
 	// ---------- STATUS ----------
