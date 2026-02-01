@@ -452,31 +452,6 @@ for _, b := range s.Backends {
 
 ---
 
-## 🐛 Limitations Connues
-
-1. **Pas de sticky sessions** : Les requêtes d'un même client peuvent aller sur différents backends
-2. **Pas de weighted load balancing** : Tous les backends ont le même poids
-3. **Pas de circuit breaker** : Pas de protection contre les backends qui échouent en cascade
-4. **Pas de rate limiting** : Aucune limitation du nombre de requêtes par IP
-
----
-
-## 🚀 Améliorations Futures
-
-- [ ] Ajout de métriques (Prometheus)
-- [ ] Support HTTPS/TLS
-- [ ] Circuit breaker pattern
-- [ ] Weighted load balancing
-- [ ] Session persistence (sticky sessions)
-- [ ] Rate limiting par IP
-- [ ] Retry logic avec backoff exponentiel
-- [ ] Logs structurés (JSON)
-- [ ] Graceful shutdown
-
-
----
-
-
 ## 👨‍💻 Auteur
 
 Développé par Tarik Ouabrk en Go
