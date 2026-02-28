@@ -43,13 +43,18 @@ type ServerPool struct {
 }
 
 func (s *ServerPool) AddBackend(b *Backend) {
-	// Create the reverse proxy once here, so proxy.go never has to
-	if b.Proxy == nil {
-		b.Proxy = httputil.NewSingleHostReverseProxy(b.URL)
-	}
-	s.mux.Lock()
-	defer s.mux.Unlock()
-	s.Backends = append(s.Backends, b)
+    if b.Proxy == nil {
+        p := httputil.NewSingleHostReverseProxy(b.URL)
+        // Set ErrorHandler once here — never touch it per-request
+        p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+            b.SetAlive(false)
+            http.Error(w, "Backend down", http.StatusBadGateway)
+        }
+        b.Proxy = p
+    }
+    s.mux.Lock()
+    defer s.mux.Unlock()
+    s.Backends = append(s.Backends, b)
 }
 
 // GetNextValidPeer dynamically selects a backend based on the configured strategy

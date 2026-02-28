@@ -27,11 +27,6 @@ func Handler(serverPool *pool.ServerPool) http.HandlerFunc {
 		defer cancel()
 		r = r.WithContext(ctx)
 
-		backend.Proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-			backend.SetAlive(false)
-			http.Error(w, "Backend down", http.StatusBadGateway)
-		}
-
 		backend.Proxy.ServeHTTP(w, r)
 	}
 }
