@@ -36,7 +36,7 @@ func Start(serverPool *pool.ServerPool, interval time.Duration) {
 func checkBackend(rawURL string) bool {
 	healthURL := strings.TrimSuffix(rawURL, "/") + "/health"
 
-	// context.WithTimeout is sufficient 
+	// context.WithTimeout 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

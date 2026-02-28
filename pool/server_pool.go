@@ -46,7 +46,6 @@ type ServerPool struct {
 func (s *ServerPool) AddBackend(b *Backend) {
     if b.Proxy == nil {
         p := httputil.NewSingleHostReverseProxy(b.URL)
-        // Set ErrorHandler once here — never touch it per-request
         p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
             b.SetAlive(false)
             http.Error(w, "Backend down", http.StatusBadGateway)
