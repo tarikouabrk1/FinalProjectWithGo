@@ -86,7 +86,7 @@ go run main.go
 ✓ Backend http://localhost:8082 is healthy
 ✓ Backend http://localhost:8083 is healthy
 2/2 backends are healthy
-Health checker started (interval: 10s)
+Health checker started (interval: 1s)
 Admin API running on :8081
 Reverse Proxy running on :8080 (strategy: round-robin)
 ```
