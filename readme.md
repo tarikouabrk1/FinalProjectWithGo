@@ -59,7 +59,7 @@ cd reverse-proxy
 - `port` : Port du reverse proxy (défaut: 8080)
 - `admin_port` : Port de l'API d'administration (défaut: 8081)
 - `strategy` : `"round-robin"` ou `"least-connections"`
-- `health_check_frequency` : Intervalle en secondes entre les health checks (défaut: 10)
+- `health_check_frequency` : Intervalle en secondes entre les health checks (défaut: 1)
 - `backends` : Liste des URLs des backends à load balancer
 
 ### 3. Démarrer les backends de test
