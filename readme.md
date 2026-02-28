@@ -336,7 +336,7 @@ curl http://localhost:8081/status
 # Modifier backend1.go pour ajouter un délai de 10 secondes
 # time.Sleep(10 * time.Second)
 
-# Avec round-robin : les requêtes attendront toutes ~5 secondes en moyenne
+# Avec round-robin : les requêtes attendront toutes ~3 secondes en moyenne
 # Avec least-connections : le backend lent recevra moins de requêtes
 ```
 
@@ -403,7 +403,7 @@ Client → Reverse Proxy (port 8080)
 
 | Opération | Timeout | Raison |
 |-----------|---------|--------|
-| Requêtes proxifiées | 5s | Évite les requêtes bloquées indéfiniment |
+| Requêtes proxifiées | 30s | Évite les requêtes bloquées indéfiniment |
 | Health checks | 2s | Détection rapide des backends inactifs |
 | Client cancellation | Propagé | Respect des annulations côté client |
 
