@@ -5,8 +5,8 @@ import (
 	"log"
 	"net/http"
 	"reverse-proxy/pool"
-	"time"
 	"strings"
+	"time"
 )
 
 func Start(serverPool *pool.ServerPool, interval time.Duration) {
@@ -14,13 +14,12 @@ func Start(serverPool *pool.ServerPool, interval time.Duration) {
 	go func() {
 		for range ticker.C {
 			backends := serverPool.GetBackends()
-			
 			for _, backend := range backends {
 				status := checkBackend(backend.URL.String())
 				previousStatus := backend.IsAlive()
 				backend.SetAlive(status)
-				
-				// Log les changements d'état
+
+				// Only log on state change to avoid noise
 				if previousStatus != status {
 					if status {
 						log.Printf("Backend %s is now UP", backend.URL.String())
@@ -35,9 +34,9 @@ func Start(serverPool *pool.ServerPool, interval time.Duration) {
 }
 
 func checkBackend(rawURL string) bool {
-	// Ensure we ping /health endpoint
 	healthURL := strings.TrimSuffix(rawURL, "/") + "/health"
 
+	// context.WithTimeout is sufficient 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -46,10 +45,7 @@ func checkBackend(rawURL string) bool {
 		return false
 	}
 
-	// we can also use this resp, err := http.DefaultClient.Do(req) instead of the two following lines
-	client := &http.Client{Timeout: 2 * time.Second,}
-    resp, err := client.Do(req)
-
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
 	}

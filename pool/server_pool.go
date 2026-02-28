@@ -1,20 +1,22 @@
 package pool
 
 import (
+	"math"
+	"net/http/httputil"
 	"net/url"
 	"sync"
 	"sync/atomic"
-	"math"
 )
 
 type Backend struct {
-	URL          *url.URL `json:"url"`
-	Alive        bool     `json:"alive"`
-	CurrentConns int64    `json:"current_connections"`
+	URL          *url.URL
+	Alive        bool
+	CurrentConns int64
+	Proxy        *httputil.ReverseProxy // created once, reused for every request
 	mux          sync.RWMutex
 }
 
-// Méthodes thread-safe
+// Thread-safe alive setter
 func (b *Backend) SetAlive(alive bool) {
 	b.mux.Lock()
 	defer b.mux.Unlock()
@@ -36,18 +38,21 @@ type LoadBalancer interface {
 type ServerPool struct {
 	Backends []*Backend
 	Current  uint64
-	Strategy string         // "round-robin" or "least-connections"
+	Strategy string // "round-robin" or "least-connections"
 	mux      sync.RWMutex
 }
 
-
 func (s *ServerPool) AddBackend(b *Backend) {
+	// Create the reverse proxy once here, so proxy.go never has to
+	if b.Proxy == nil {
+		b.Proxy = httputil.NewSingleHostReverseProxy(b.URL)
+	}
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	s.Backends = append(s.Backends, b)
 }
 
-// GetNextValidPeer dynamically selects based on strategy
+// GetNextValidPeer dynamically selects a backend based on the configured strategy
 func (s *ServerPool) GetNextValidPeer() *Backend {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
@@ -71,10 +76,7 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 		return nil
 	}
 
-	// Increment ONCE and get the starting index
 	start := atomic.AddUint64(&s.Current, 1) % uint64(length)
-
-	// Try backends starting from 'start' position
 	for i := 0; i < length; i++ {
 		idx := (start + uint64(i)) % uint64(length)
 		if s.Backends[idx].IsAlive() {
@@ -83,7 +85,6 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 	}
 	return nil
 }
-
 
 func (s *ServerPool) SetBackendStatus(u *url.URL, alive bool) {
 	s.mux.Lock()
@@ -103,7 +104,6 @@ func (s *ServerPool) RemoveBackend(u *url.URL) bool {
 
 	for i, b := range s.Backends {
 		if b.URL.String() == u.String() {
-			// remove element i
 			s.Backends = append(s.Backends[:i], s.Backends[i+1:]...)
 			return true
 		}

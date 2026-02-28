@@ -23,7 +23,6 @@ type StatusResponse struct {
 }
 
 func Start(serverPool *pool.ServerPool, port int) {
-	// Create a dedicated ServeMux to isolate the admin
 	adminMux := http.NewServeMux()
 
 	// ---------- STATUS ----------
@@ -34,7 +33,6 @@ func Start(serverPool *pool.ServerPool, port int) {
 		}
 
 		backends := serverPool.GetBackends()
-
 		resp := StatusResponse{
 			TotalBackends: len(backends),
 		}
@@ -43,12 +41,10 @@ func Start(serverPool *pool.ServerPool, port int) {
 			if b.IsAlive() {
 				resp.ActiveBackends++
 			}
-
 			resp.Backends = append(resp.Backends, BackendStatus{
 				URL:          b.URL.String(),
 				Alive:        b.IsAlive(),
-				CurrentConns: atomic.LoadInt64(&b.CurrentConns), 
-
+				CurrentConns: atomic.LoadInt64(&b.CurrentConns),
 			})
 		}
 
@@ -76,7 +72,7 @@ func Start(serverPool *pool.ServerPool, port int) {
 				return
 			}
 
-			//check if the backend already exists
+			// Check for duplicates
 			for _, b := range serverPool.GetBackends() {
 				if b.URL.String() == parsedURL.String() {
 					http.Error(w, "Backend already exists", http.StatusConflict)
@@ -84,12 +80,14 @@ func Start(serverPool *pool.ServerPool, port int) {
 				}
 			}
 
+			// Add as Alive: false — the health checker will verify and enable it
+			// on the next tick. This prevents routing traffic to an unverified backend.
 			serverPool.AddBackend(&pool.Backend{
 				URL:   parsedURL,
-				Alive: true,
+				Alive: false,
 			})
 
-			log.Printf("Backend added: %s", parsedURL.String())
+			log.Printf("Backend added (pending health check): %s", parsedURL.String())
 			w.WriteHeader(http.StatusCreated)
 
 		case http.MethodDelete:

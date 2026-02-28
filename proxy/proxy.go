@@ -3,11 +3,14 @@ package proxy
 import (
 	"context"
 	"net/http"
-	"net/http/httputil"
 	"reverse-proxy/pool"
 	"sync/atomic"
 	"time"
 )
+
+// ProxyTimeout is the maximum time the proxy will wait for a backend response.
+// Set high enough to accommodate slow backends 
+const ProxyTimeout = 30 * time.Second
 
 func Handler(serverPool *pool.ServerPool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -17,22 +20,18 @@ func Handler(serverPool *pool.ServerPool) http.HandlerFunc {
 			return
 		}
 
-		// Increment connection safely
 		atomic.AddInt64(&backend.CurrentConns, 1)
 		defer atomic.AddInt64(&backend.CurrentConns, -1)
-		
-		// Set a timeout context (5s) and propagate client cancellation
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+
+		ctx, cancel := context.WithTimeout(r.Context(), ProxyTimeout)
 		defer cancel()
 		r = r.WithContext(ctx)
 
-		proxy := httputil.NewSingleHostReverseProxy(backend.URL)
-
-		proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		backend.Proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			backend.SetAlive(false)
 			http.Error(w, "Backend down", http.StatusBadGateway)
 		}
 
-		proxy.ServeHTTP(w, r)
+		backend.Proxy.ServeHTTP(w, r)
 	}
 }
