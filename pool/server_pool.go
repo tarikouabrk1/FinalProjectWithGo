@@ -2,18 +2,16 @@ package pool
 
 import (
 	"math"
-	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"sync"
 	"sync/atomic"
 )
 
+// Backend represents a single upstream server.
 type Backend struct {
 	URL          *url.URL
 	alive        bool
-	CurrentConns int64
-	Proxy        *httputil.ReverseProxy
+	CurrentConns int64 // tracked atomically for least-connections balancing
 	mux          sync.RWMutex
 }
 
@@ -29,15 +27,7 @@ func (b *Backend) IsAlive() bool {
 	return b.alive
 }
 
-// SetErrorHandler allows the proxy handler to attach a custom error callback.
-func (b *Backend) SetErrorHandler(fn func(http.ResponseWriter, *http.Request, error)) {
-	b.mux.Lock()
-	defer b.mux.Unlock()
-	if b.Proxy != nil {
-		b.Proxy.ErrorHandler = fn
-	}
-}
-
+// LoadBalancer abstracts selection and management of backend servers.
 type LoadBalancer interface {
 	GetNextValidPeer() *Backend
 	AddBackend(*Backend)
@@ -46,28 +36,22 @@ type LoadBalancer interface {
 	SetBackendStatus(*url.URL, bool)
 }
 
+// ServerPool holds the list of backends and the chosen load-balancing strategy.
 type ServerPool struct {
 	Backends []*Backend
-	Current  uint64
-	Strategy string // "round-robin" or "least-connections"
+	Current  uint64 // atomic counter for round-robin
+	Strategy string // "round-robin" | "least-connections"
 	mux      sync.RWMutex
 }
 
+// AddBackend registers a new backend in the pool.
 func (s *ServerPool) AddBackend(b *Backend) {
-	if b.Proxy == nil {
-		p := httputil.NewSingleHostReverseProxy(b.URL)
-		// Default error handler — will be overridden per-request by proxy.Handler
-		p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-			b.SetAlive(false)
-			http.Error(w, "Bad Gateway", http.StatusBadGateway)
-		}
-		b.Proxy = p
-	}
 	s.mux.Lock()
 	defer s.mux.Unlock()
 	s.Backends = append(s.Backends, b)
 }
 
+// GetNextValidPeer returns the next alive backend using the configured strategy.
 func (s *ServerPool) GetNextValidPeer() *Backend {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
@@ -90,7 +74,6 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 	if length == 0 {
 		return nil
 	}
-
 	start := (atomic.AddUint64(&s.Current, 1) - 1) % uint64(length)
 	for i := 0; i < length; i++ {
 		idx := (start + uint64(i)) % uint64(length)
@@ -101,10 +84,10 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 	return nil
 }
 
+// SetBackendStatus updates the alive flag of the backend matching the given URL.
 func (s *ServerPool) SetBackendStatus(u *url.URL, alive bool) {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
-
 	for _, b := range s.Backends {
 		if b.URL.String() == u.String() {
 			b.SetAlive(alive)
@@ -113,10 +96,10 @@ func (s *ServerPool) SetBackendStatus(u *url.URL, alive bool) {
 	}
 }
 
+// RemoveBackend removes the backend with the given URL from the pool.
 func (s *ServerPool) RemoveBackend(u *url.URL) bool {
 	s.mux.Lock()
 	defer s.mux.Unlock()
-
 	for i, b := range s.Backends {
 		if b.URL.String() == u.String() {
 			s.Backends = append(s.Backends[:i], s.Backends[i+1:]...)
@@ -126,6 +109,7 @@ func (s *ServerPool) RemoveBackend(u *url.URL) bool {
 	return false
 }
 
+// GetBackends returns a snapshot copy of the backend slice (safe for concurrent iteration).
 func (s *ServerPool) GetBackends() []*Backend {
 	s.mux.RLock()
 	defer s.mux.RUnlock()

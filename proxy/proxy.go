@@ -4,18 +4,41 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"net/http/httputil"
 	"reverse-proxy/pool"
 	"sync/atomic"
 	"time"
 )
 
-// Handler returns an HTTP handler that forwards requests to a healthy backend.
-// It retries with the next available peer if the chosen backend fails mid-request,
-// marking the failed backend as dead immediately so the health checker picks it up.
+// transportWrapper wraps http.DefaultTransport and records whether the
+// RoundTrip call failed with a connection-level error (refused, reset, EOF).
+// A new instance is created per request attempt — zero shared state between
+// concurrent goroutines.
+type transportWrapper struct {
+	transport http.RoundTripper
+	failed    bool
+}
+
+func (t *transportWrapper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.transport.RoundTrip(req)
+	if err != nil {
+		t.failed = true
+	}
+	return resp, err
+}
+
+// Handler returns an http.HandlerFunc that forwards requests to a healthy backend.
+//
+// Retry logic: if the selected backend fails with a connection-level error
+// (refused, reset, EOF, timeout), it is immediately marked as DOWN and the
+// next available peer is tried up to len(backends) times total.
+// A 503 is returned only when all attempts are exhausted.
+//
+// Thread safety: a fresh httputil.ReverseProxy and transportWrapper are built
+// per attempt so concurrent requests never share mutable per-request state.
 func Handler(serverPool pool.LoadBalancer, proxyTimeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		backends := serverPool.GetBackends()
-		maxAttempts := len(backends)
+		maxAttempts := len(serverPool.GetBackends())
 		if maxAttempts == 0 {
 			http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 			return
@@ -24,44 +47,38 @@ func Handler(serverPool pool.LoadBalancer, proxyTimeout time.Duration) http.Hand
 		for attempt := 0; attempt < maxAttempts; attempt++ {
 			backend := serverPool.GetNextValidPeer()
 			if backend == nil {
-				// No alive backend left
-				break
+				break // no alive peers left
 			}
 
-			// Track active connections for least-connections balancing
+			// Increment connection counter for least-connections balancing.
 			atomic.AddInt64(&backend.CurrentConns, 1)
 
-			// Wrap request context with a timeout so slow backends don't block forever.
-			// If the client disconnects first, r.Context() is already canceled and this
-			// context will inherit that cancellation immediately.
+			// Honour the client context AND enforce a per-request timeout.
+			// If the client disconnects, r.Context() cancels immediately.
 			ctx, cancel := context.WithTimeout(r.Context(), proxyTimeout)
 			req := r.WithContext(ctx)
 
-			// failed is set to true inside the ErrorHandler closure when the backend
-			// returns a connection-level error (refused, reset, timeout, etc.)
-			failed := false
+			// Fresh transport per attempt — avoids any shared mutable state
+			// between concurrent goroutines hitting the same backend.
+			tw := &transportWrapper{transport: http.DefaultTransport}
+			rp := httputil.NewSingleHostReverseProxy(backend.URL)
+			rp.Transport = tw
 
-			backend.SetErrorHandler(func(w http.ResponseWriter, r *http.Request, err error) {
-				log.Printf("Backend %s error: %v — marking as DOWN and retrying", backend.URL, err)
-				backend.SetAlive(false)
-				failed = true
-				// Do NOT write to w here; we'll either retry or send 503 below.
-			})
-
-			backend.Proxy.ServeHTTP(w, req)
-
+			rp.ServeHTTP(w, req)
 			atomic.AddInt64(&backend.CurrentConns, -1)
 			cancel()
 
-			if !failed {
-				// Request completed successfully
-				return
+			if !tw.failed {
+				return // success
 			}
 
-			// Backend failed: loop and try the next peer
+			// Connection-level failure: mark backend dead and try the next peer.
+			log.Printf("Backend %s error — marking DOWN, retrying (attempt %d/%d)",
+				backend.URL, attempt+1, maxAttempts)
+			backend.SetAlive(false)
 		}
 
-		// All attempts exhausted
+		// Every peer was tried and failed (or no peers available).
 		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 	}
 }
