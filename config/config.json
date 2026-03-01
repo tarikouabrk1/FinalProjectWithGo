@@ -3,9 +3,9 @@
   "admin_port": 8081,
   "strategy": "least-connections",
   "health_check_frequency": 1,
+  "proxy_timeout": 30,
   "backends": [
     "http://localhost:8082",
     "http://localhost:8083"
   ]
 }
-

@@ -1,16 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"reverse-proxy/admin"
 	"reverse-proxy/health"
 	"reverse-proxy/pool"
 	"reverse-proxy/proxy"
+	"syscall"
 	"time"
 )
 
@@ -19,6 +22,7 @@ type Config struct {
 	AdminPort            int      `json:"admin_port"`
 	Strategy             string   `json:"strategy"`
 	HealthCheckFrequency int      `json:"health_check_frequency"`
+	ProxyTimeout         int      `json:"proxy_timeout"` // seconds; defaults to 30 if omitted
 	Backends             []string `json:"backends"`
 }
 
@@ -33,6 +37,15 @@ func loadConfig(path string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Apply sensible defaults
+	if cfg.ProxyTimeout <= 0 {
+		cfg.ProxyTimeout = 30
+	}
+	if cfg.HealthCheckFrequency <= 0 {
+		cfg.HealthCheckFrequency = 10
+	}
+
 	return &cfg, nil
 }
 
@@ -65,33 +78,60 @@ func main() {
 			URL: u,
 		}
 		backend.SetAlive(isAlive)
-
 		serverPool.AddBackend(backend)
 
 		if isAlive {
 			validBackendCount++
+			log.Printf("✓ Backend %s is healthy", u.String())
+		} else {
+			log.Printf("✗ Backend %s is unreachable", u.String())
 		}
 	}
 
-	// Warn if no backend is available
 	if validBackendCount == 0 {
 		log.Println("WARNING: No healthy backends found! Proxy will return 503 until backends become available.")
 	} else {
 		log.Printf("%d/%d backends are healthy\n", validBackendCount, len(cfg.Backends))
 	}
 
-	// start health checks
+	// Start background health checker
 	health.Start(serverPool, time.Duration(cfg.HealthCheckFrequency)*time.Second)
 
-	// start admin API
+	// Start admin API (runs in its own goroutine internally)
 	admin.Start(serverPool, cfg.AdminPort)
 
-	// start the reverse proxy
-	http.HandleFunc("/", proxy.Handler(serverPool))
+	// Build the main proxy server
+	proxyTimeout := time.Duration(cfg.ProxyTimeout) * time.Second
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", proxy.Handler(serverPool, proxyTimeout))
 
-	log.Printf("Reverse Proxy running on :%d (strategy: %s)\n", cfg.Port, cfg.Strategy)
-	log.Fatal(http.ListenAndServe(
-		fmt.Sprintf(":%d", cfg.Port),
-		nil,
-	))
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Port),
+		Handler: mux,
+	}
+
+	// Start proxy in background goroutine so we can listen for shutdown signals
+	go func() {
+		log.Printf("Reverse Proxy running on :%d (strategy: %s, proxy timeout: %ds)\n",
+			cfg.Port, cfg.Strategy, cfg.ProxyTimeout)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Proxy server error: %v", err)
+		}
+	}()
+
+	// ── Graceful shutdown ─────────────────────────────────────────────────────
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Println("Shutdown signal received — draining in-flight requests (up to 10s)...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Forced shutdown due to timeout: %v", err)
+	}
+
+	log.Println("Server stopped cleanly.")
 }

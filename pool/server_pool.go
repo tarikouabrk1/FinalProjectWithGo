@@ -29,13 +29,21 @@ func (b *Backend) IsAlive() bool {
 	return b.alive
 }
 
+// SetErrorHandler allows the proxy handler to attach a custom error callback.
+func (b *Backend) SetErrorHandler(fn func(http.ResponseWriter, *http.Request, error)) {
+	b.mux.Lock()
+	defer b.mux.Unlock()
+	if b.Proxy != nil {
+		b.Proxy.ErrorHandler = fn
+	}
+}
+
 type LoadBalancer interface {
 	GetNextValidPeer() *Backend
 	AddBackend(*Backend)
 	GetBackends() []*Backend
 	RemoveBackend(*url.URL) bool
-	SetBackendStatus(*url.URL, bool)  
-
+	SetBackendStatus(*url.URL, bool)
 }
 
 type ServerPool struct {
@@ -48,9 +56,10 @@ type ServerPool struct {
 func (s *ServerPool) AddBackend(b *Backend) {
 	if b.Proxy == nil {
 		p := httputil.NewSingleHostReverseProxy(b.URL)
+		// Default error handler — will be overridden per-request by proxy.Handler
 		p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 			b.SetAlive(false)
-			http.Error(w, "Backend down", http.StatusBadGateway)
+			http.Error(w, "Bad Gateway", http.StatusBadGateway)
 		}
 		b.Proxy = p
 	}
@@ -93,8 +102,8 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 }
 
 func (s *ServerPool) SetBackendStatus(u *url.URL, alive bool) {
-	s.mux.Lock()
-	defer s.mux.Unlock()
+	s.mux.RLock()
+	defer s.mux.RUnlock()
 
 	for _, b := range s.Backends {
 		if b.URL.String() == u.String() {
