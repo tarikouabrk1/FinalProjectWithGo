@@ -86,11 +86,11 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 
 // SetBackendStatus updates the alive flag of the backend matching the given URL.
 func (s *ServerPool) SetBackendStatus(u *url.URL, alive bool) {
-	s.mux.RLock()
-	defer s.mux.RUnlock()
+	s.mux.Lock()            
+	defer s.mux.Unlock()
 	for _, b := range s.Backends {
 		if b.URL.String() == u.String() {
-			b.SetAlive(alive)
+			b.SetAlive(alive) // backend's own mux handles its field
 			return
 		}
 	}
