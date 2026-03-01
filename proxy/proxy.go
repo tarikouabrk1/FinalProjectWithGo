@@ -45,7 +45,11 @@ func Handler(serverPool pool.LoadBalancer, proxyTimeout time.Duration) http.Hand
 
 			atomic.AddInt64(&backend.CurrentConns, 1)
 
+			// FIX: defer cancel() immediately after WithTimeout so it fires
+			// even if ServeHTTP panics, preventing a context leak.
 			ctx, cancel := context.WithTimeout(r.Context(), proxyTimeout)
+			defer cancel()
+
 			req := r.WithContext(ctx)
 
 			// Buffer into a recorder — never touch the real writer until success
@@ -57,7 +61,6 @@ func Handler(serverPool pool.LoadBalancer, proxyTimeout time.Duration) http.Hand
 
 			rp.ServeHTTP(recorder, req)
 			atomic.AddInt64(&backend.CurrentConns, -1)
-			cancel()
 
 			if !tw.failed {
 				// Only now flush the buffered response to the real writer

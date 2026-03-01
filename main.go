@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -50,7 +51,11 @@ func loadConfig(path string) (*Config, error) {
 }
 
 func main() {
-	cfg, err := loadConfig("config/config.json")
+	// FIX: parse --config flag instead of hardcoding the path.
+	configPath := flag.String("config", "config/config.json", "path to config JSON file")
+	flag.Parse()
+
+	cfg, err := loadConfig(*configPath)
 	if err != nil {
 		log.Fatal("Failed to load config:", err)
 	}
@@ -119,7 +124,7 @@ func main() {
 		}
 	}()
 
-	// Graceful shutdown 
+	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
