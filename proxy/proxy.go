@@ -28,6 +28,26 @@ func (t *transportWrapper) RoundTrip(req *http.Request) (*http.Response, error) 
 	return resp, err
 }
 
+// attemptBackend tries to forward the request to the given backend within the
+// specified timeout. It returns the buffered response and whether the attempt
+// succeeded. Using a dedicated function means defer cancel() fires at the end
+// of each attempt — not at the end of the outer Handler function — which
+// prevents context/timer goroutine leaks when the retry loop runs multiple times.
+func attemptBackend(r *http.Request, backend *pool.Backend, proxyTimeout time.Duration) (*httptest.ResponseRecorder, bool) {
+	ctx, cancel := context.WithTimeout(r.Context(), proxyTimeout)
+	defer cancel() // ✅ fires when this function returns, once per attempt
+
+	req := r.WithContext(ctx)
+	recorder := httptest.NewRecorder()
+
+	tw := &transportWrapper{transport: http.DefaultTransport}
+	rp := httputil.NewSingleHostReverseProxy(backend.URL)
+	rp.Transport = tw
+
+	rp.ServeHTTP(recorder, req)
+	return recorder, !tw.failed
+}
+
 // Handler returns an http.HandlerFunc that forwards requests to a healthy backend.
 func Handler(serverPool pool.LoadBalancer, proxyTimeout time.Duration) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -44,26 +64,11 @@ func Handler(serverPool pool.LoadBalancer, proxyTimeout time.Duration) http.Hand
 			}
 
 			atomic.AddInt64(&backend.CurrentConns, 1)
-
-			// FIX: defer cancel() immediately after WithTimeout so it fires
-			// even if ServeHTTP panics, preventing a context leak.
-			ctx, cancel := context.WithTimeout(r.Context(), proxyTimeout)
-			defer cancel()
-
-			req := r.WithContext(ctx)
-
-			// Buffer into a recorder — never touch the real writer until success
-			recorder := httptest.NewRecorder()
-
-			tw := &transportWrapper{transport: http.DefaultTransport}
-			rp := httputil.NewSingleHostReverseProxy(backend.URL)
-			rp.Transport = tw
-
-			rp.ServeHTTP(recorder, req)
+			recorder, ok := attemptBackend(r, backend, proxyTimeout)
 			atomic.AddInt64(&backend.CurrentConns, -1)
 
-			if !tw.failed {
-				// Only now flush the buffered response to the real writer
+			if ok {
+				// Only flush the buffered response to the real writer on success
 				for key, vals := range recorder.Header() {
 					for _, val := range vals {
 						w.Header().Add(key, val)

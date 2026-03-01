@@ -1,7 +1,7 @@
 {
   "port": 8080,
   "admin_port": 8081,
-  "strategy": "least-connections",
+  "strategy": "round-robin",
   "health_check_frequency": 1,
   "proxy_timeout": 30,
   "backends": [

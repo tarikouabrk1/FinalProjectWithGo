@@ -227,7 +227,7 @@ curl http://localhost:8081/status | python3 -m json.tool
     {
       "url": "http://localhost:8083",
       "alive": true,
-      "current_connections": 5
+      "current_connections": 1
     }
   ]
 }
@@ -345,25 +345,35 @@ curl http://localhost:8081/status
 ## 🏗️ Architecture du Projet
 
 ```
-reverse-proxy/
-
+FinalProjectWithGo/
 ├── readme.md
 ├── go.mod
-├── main.go                 # Point d'entrée, orchestration
-├── config/
-│   └── config.json         # Configuration (ports, stratégie, backends)
+├── main.go
+├── Final Project - Reverse Proxy.pdf
+│
 ├── admin/
-│   └── admin.go            # API REST d'administration
-├── health/
-│   └── checker.go          # Health checks périodiques
-├── pool/
-│   └── server_pool.go      # Pool de backends + algorithmes de load balancing
-├── proxy/
-│   └── proxy.go            # Handler HTTP qui proxifie les requêtes
+│   └── admin.go
+│
 ├── backend1/
 │   └── backend1.go
+│
 ├── backend2/
 │   └── backend2.go
+│
+├── config/
+│   └── config.json
+│
+├── health/
+│   ├── checker.go
+│   └── checker_test.go
+│
+├── pool/
+│   ├── server_pool.go
+│   └── server_pool_test.go
+│
+├── proxy/
+│   ├── proxy.go
+│   └── proxy_test.go
 ```
 
 ### Flux d'une requête
@@ -442,12 +452,12 @@ for _, b := range s.Backends {
 
 | Critère | Round-Robin | Least-Connections |
 |---------|-------------|-------------------|
-| **Simplicité** | ⭐⭐⭐ Très simple | ⭐⭐ Moyennement simple |
-| **Performance** | ⭐⭐ Bonne | ⭐⭐⭐ Excellente |
+| **Simplicité** |  Très simple | Moyennement simple |
+| **Performance** | Bonne | Excellente |
 | **Équilibrage** | ✅ Équitable sur le long terme | ✅ Optimal en temps réel |
-| **Backends hétérogènes** | ❌ Moins adapté | ✅ Très adapté |
-| **Requêtes variables** | ❌ Peut créer des déséquilibres | ✅ S'adapte automatiquement |
-| **CPU utilisé** | ⭐⭐⭐ Minimal | ⭐⭐ Légèrement supérieur |
+| **Backends hétérogènes** | Moins adapté | Très adapté |
+| **Requêtes variables** | Peut créer des déséquilibres | S'adapte automatiquement |
+| **CPU utilisé** |  Minimal | Légèrement supérieur |
 | **Cas d'usage** | Backends identiques, requêtes similaires | Backends différents, requêtes hétérogènes |
 
 ---
