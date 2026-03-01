@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -37,34 +36,6 @@ func loadConfig(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-func validateBackend(rawURL string, timeout time.Duration) bool {
-	healthURL := rawURL + "/health"
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", healthURL, nil)
-	if err != nil {
-		log.Printf(" Failed to create request for %s: %v", rawURL, err)
-		return false
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Printf("Backend %s is unreachable: %v", rawURL, err)
-		return false
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK {
-		log.Printf(" Backend %s is healthy", rawURL)
-		return true
-	}
-
-	log.Printf("  Backend %s returned status %d", rawURL, resp.StatusCode)
-	return false
-}
-
 func main() {
 	cfg, err := loadConfig("config/config.json")
 	if err != nil {
@@ -78,7 +49,7 @@ func main() {
 
 	serverPool := &pool.ServerPool{Strategy: cfg.Strategy}
 
-	log.Println(" Validating backends...")
+	log.Println("Validating backends...")
 	validBackendCount := 0
 
 	for _, b := range cfg.Backends {
@@ -88,15 +59,15 @@ func main() {
 			continue
 		}
 
-		isAlive := validateBackend(u.String(), 5*time.Second)
-		
+		isAlive := health.CheckBackend(u.String())
+
 		backend := &pool.Backend{
-			URL:   u,
-			Alive: isAlive,
+			URL: u,
 		}
-		
+		backend.SetAlive(isAlive)
+
 		serverPool.AddBackend(backend)
-		
+
 		if isAlive {
 			validBackendCount++
 		}

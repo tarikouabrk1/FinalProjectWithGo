@@ -9,13 +9,13 @@ import (
 	"time"
 )
 
-func Start(serverPool *pool.ServerPool, interval time.Duration) {
+func Start(serverPool pool.LoadBalancer, interval time.Duration) {
 	ticker := time.NewTicker(interval)
 	go func() {
 		for range ticker.C {
 			backends := serverPool.GetBackends()
 			for _, backend := range backends {
-				status := checkBackend(backend.URL.String())
+				status := CheckBackend(backend.URL.String())
 				previousStatus := backend.IsAlive()
 				backend.SetAlive(status)
 
@@ -33,10 +33,9 @@ func Start(serverPool *pool.ServerPool, interval time.Duration) {
 	log.Printf("Health checker started (interval: %v)", interval)
 }
 
-func checkBackend(rawURL string) bool {
+func CheckBackend(rawURL string) bool {
 	healthURL := strings.TrimSuffix(rawURL, "/") + "/health"
 
-	// context.WithTimeout 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 

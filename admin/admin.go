@@ -22,7 +22,7 @@ type StatusResponse struct {
 	Backends       []BackendStatus `json:"backends"`
 }
 
-func Start(serverPool *pool.ServerPool, port int) {
+func Start(serverPool pool.LoadBalancer, port int) {
 	adminMux := http.NewServeMux()
 
 	// ---------- STATUS ----------
@@ -80,11 +80,10 @@ func Start(serverPool *pool.ServerPool, port int) {
 				}
 			}
 
-			// Add as Alive: false — the health checker will verify and enable it
+			// Add as alive: false — the health checker will verify and enable it
 			// on the next tick. This prevents routing traffic to an unverified backend.
 			serverPool.AddBackend(&pool.Backend{
-				URL:   parsedURL,
-				Alive: false,
+				URL: parsedURL,
 			})
 
 			log.Printf("Backend added (pending health check): %s", parsedURL.String())

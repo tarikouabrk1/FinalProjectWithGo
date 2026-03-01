@@ -8,11 +8,9 @@ import (
 	"time"
 )
 
-// ProxyTimeout is the maximum time the proxy will wait for a backend response.
-// Set high enough to accommodate slow backends 
 const ProxyTimeout = 30 * time.Second
 
-func Handler(serverPool *pool.ServerPool) http.HandlerFunc {
+func Handler(serverPool pool.LoadBalancer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		backend := serverPool.GetNextValidPeer()
 		if backend == nil {

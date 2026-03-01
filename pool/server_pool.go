@@ -2,38 +2,38 @@ package pool
 
 import (
 	"math"
+	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"sync"
 	"sync/atomic"
-	"net/http"
 )
 
 type Backend struct {
 	URL          *url.URL
-	Alive        bool
+	alive        bool
 	CurrentConns int64
-	Proxy        *httputil.ReverseProxy // created once, reused for every request
+	Proxy        *httputil.ReverseProxy
 	mux          sync.RWMutex
 }
 
-// Thread-safe alive setter
 func (b *Backend) SetAlive(alive bool) {
 	b.mux.Lock()
 	defer b.mux.Unlock()
-	b.Alive = alive
+	b.alive = alive
 }
 
 func (b *Backend) IsAlive() bool {
 	b.mux.RLock()
 	defer b.mux.RUnlock()
-	return b.Alive
+	return b.alive
 }
 
 type LoadBalancer interface {
 	GetNextValidPeer() *Backend
 	AddBackend(*Backend)
-	SetBackendStatus(*url.URL, bool)
+	GetBackends() []*Backend
+	RemoveBackend(*url.URL) bool
 }
 
 type ServerPool struct {
@@ -44,20 +44,19 @@ type ServerPool struct {
 }
 
 func (s *ServerPool) AddBackend(b *Backend) {
-    if b.Proxy == nil {
-        p := httputil.NewSingleHostReverseProxy(b.URL)
-        p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-            b.SetAlive(false)
-            http.Error(w, "Backend down", http.StatusBadGateway)
-        }
-        b.Proxy = p
-    }
-    s.mux.Lock()
-    defer s.mux.Unlock()
-    s.Backends = append(s.Backends, b)
+	if b.Proxy == nil {
+		p := httputil.NewSingleHostReverseProxy(b.URL)
+		p.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			b.SetAlive(false)
+			http.Error(w, "Backend down", http.StatusBadGateway)
+		}
+		b.Proxy = p
+	}
+	s.mux.Lock()
+	defer s.mux.Unlock()
+	s.Backends = append(s.Backends, b)
 }
 
-// GetNextValidPeer dynamically selects a backend based on the configured strategy
 func (s *ServerPool) GetNextValidPeer() *Backend {
 	s.mux.RLock()
 	defer s.mux.RUnlock()
@@ -81,7 +80,7 @@ func (s *ServerPool) GetNextValidPeer() *Backend {
 		return nil
 	}
 
-	start := atomic.AddUint64(&s.Current, 1) % uint64(length)
+	start := (atomic.AddUint64(&s.Current, 1) - 1) % uint64(length)
 	for i := 0; i < length; i++ {
 		idx := (start + uint64(i)) % uint64(length)
 		if s.Backends[idx].IsAlive() {
