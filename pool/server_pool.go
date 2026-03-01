@@ -34,6 +34,8 @@ type LoadBalancer interface {
 	AddBackend(*Backend)
 	GetBackends() []*Backend
 	RemoveBackend(*url.URL) bool
+	SetBackendStatus(*url.URL, bool)  
+
 }
 
 type ServerPool struct {

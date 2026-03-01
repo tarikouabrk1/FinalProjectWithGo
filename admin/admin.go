@@ -21,7 +21,6 @@ type StatusResponse struct {
 	ActiveBackends int             `json:"active_backends"`
 	Backends       []BackendStatus `json:"backends"`
 }
-
 func Start(serverPool pool.LoadBalancer, port int) {
 	adminMux := http.NewServeMux()
 
